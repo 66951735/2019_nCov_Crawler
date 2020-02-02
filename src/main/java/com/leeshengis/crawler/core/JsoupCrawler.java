@@ -25,8 +25,10 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * crawler
@@ -46,6 +48,9 @@ public class JsoupCrawler {
 
     @Value("${mail.send.to}")
     private String sendTo;
+
+    @Value("${mail.follow.province}")
+    private String followProvinces;
 
     @Scheduled(cron = "0 0/1 * * * ?")
     public void crawler() {
@@ -77,7 +82,7 @@ public class JsoupCrawler {
         List<AreaStat> areaStatList = element == null ? null : processAreaStat(element.data());
         try {
             crawlerService.save(statistics, areaStatList);
-            new Thread(() -> this.sendEmail(statistics)).start();
+            new Thread(() -> this.sendEmail(statistics, areaStatList)).start();
         } catch (Exception e) {
             log.error("crawler data save failed.", e);
         }
@@ -126,23 +131,70 @@ public class JsoupCrawler {
         return matcher.find() ? matcher.group() : null;
     }
 
-    private void sendEmail(Statistics statistics) {
-        String htmlContent = "<html>\n" +
-                " <body>\n" +
+    private void sendEmail(Statistics statistics, List<AreaStat> areaStatList) {
+        String htmlContent =
+                "<html>\n" +
+                        " <body>\n" +
+                        "   <div>\n" +
+                        "        <span>截至 " + statistics.getTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) + " 全国数据统计</span>\n" +
+                        "   </div>\n" +
+                        "   <ul>\n" +
+                        "       <li>" + statistics.getConfirmedCount() + "</strong><span>确诊病例</span></li>\n" +
+                        "       <li>" + statistics.getSuspectedCount() + "</strong><span>疑似病例</span></li>\n" +
+                        "       <li>" + statistics.getDeadCount() + "</strong><span>死亡人数</span></li>\n" +
+                        "       <li>" + statistics.getCuredCount() + "</strong><span>治愈人数</span></li>\n" +
+                        "   </ul>\n";
+        if (!Objects.isNull(followProvinces) && followProvinces.trim().length() > 0) {
+            String[] provinces = followProvinces.split(";");
+            log.info("provinces: {}", followProvinces);
+            htmlContent +=
+                    "<div>\n" +
+                            "        <span>您的关注：<span>\n" +
+                            "   </div>\n" +
+                            "   <div>\n" +
+                            "        <table>\n" +
+                            "           <tr>\n" +
+                            "               <th>省（市）</th>\n" +
+                            "               <th>市（区）</th>\n" +
+                            "               <th>确诊病例</th>\n" +
+                            "               <th>疑似病例</th>\n" +
+                            "               <th>死亡人数</th>\n" +
+                            "               <th>治愈人数</th>\n" +
+                            "           </tr>";
+            for (String province : provinces) {
+                StringBuilder sb = new StringBuilder();
+                for (AreaStat areaStat : areaStatList) {
+                    if (province.equals(areaStat.getProvinceName()) && areaStat.getCityName() == null) {
+                        htmlContent +=
+                                "<tr>\n" +
+                                        "    <td>" + areaStat.getProvinceName() + "</td>\n" +
+                                        "    <td></td>\n" +
+                                        "    <td>" + areaStat.getConfirmedCount() + "</td>\n" +
+                                        "    <td>" + areaStat.getSuspectedCount() + "</td>\n" +
+                                        "    <td>" + areaStat.getDeadCount() + "</td>\n" +
+                                        "    <td>" + areaStat.getCuredCount() + "</td>\n" +
+                                        "</tr>";
+                    } else if (province.equals(areaStat.getProvinceName())) {
+                        sb.append("<tr>\n" +
+                                "    <td></td>\n" +
+                                "    <td>" + areaStat.getCityName() + "</td>\n" +
+                                "    <td>" + areaStat.getConfirmedCount() + "</td>\n" +
+                                "    <td>" + areaStat.getSuspectedCount() + "</td>\n" +
+                                "    <td>" + areaStat.getDeadCount() + "</td>\n" +
+                                "    <td>" + areaStat.getCuredCount() + "</td>\n" +
+                                "</tr>");
+                    }
+                }
+                htmlContent += sb.toString();
+            }
+            htmlContent += "</table></div>";
+        }
+        htmlContent +=
                 "   <div>\n" +
-                "        <span>截至 " + statistics.getTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) + " 全国数据统计</span>\n" +
-                "   </div>\n" +
-                "   <ul>\n" +
-                "       <li>" + statistics.getConfirmedCount() + "</strong><span>确诊病例</span></li>\n" +
-                "       <li>" + statistics.getSuspectedCount() + "</strong><span>疑似病例</span></li>\n" +
-                "       <li>" + statistics.getDeadCount() + "</strong><span>死亡人数</span></li>\n" +
-                "       <li>" + statistics.getCuredCount() + "</strong><span>治愈人数</span></li>\n" +
-                "   </ul>\n" +
-                "   <div>\n" +
-                "        <a href=\"" + Constants.CONNECT_URL + "\">详情请参见</a>\n" +
-                "   </div>\n" +
-                " </body>\n" +
-                "</html>";
+                        "        <a href=\"" + Constants.CONNECT_URL + "\">详情请参见</a>\n" +
+                        "   </div>\n" +
+                        " </body>\n" +
+                        "</html>";
         emailService.sendHtmlEmail(sendTo.split(";"), Constants.EMAIL_TITLE, htmlContent);
     }
 }
