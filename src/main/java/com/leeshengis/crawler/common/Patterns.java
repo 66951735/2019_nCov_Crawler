@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
  */
 public class Patterns {
 
-    public final static String STATISTICS_STRING = "\\{(\"id\".*?)\\}";
+    public final static String STATISTICS_STRING = "\\{(\"id\".*?)\\}(?=\\}catch)";
 
     public final static Pattern STATISTICS = Pattern.compile(STATISTICS_STRING);
 
